@@ -1,67 +1,101 @@
+------
 #!/usr/bin/python3
-# -------------------------------------------------------------
-# INET4031 – Lab 8 Part 2: Automating User Creation
-# Author: 
-# Date: 10/26/2025
-# Description:
-#   This Python script automates the creation of multiple users
-#   and their associated groups on a Linux system. User data is
-#   read from standard input (an input file) with fields separated
-#   by colons (:). Each line specifies username, password, last name,
-#   first name, and group memberships. The script can run in "dry run"
-#   mode for testing or in normal mode to actually create users.
-# -------------------------------------------------------------
+# ===============================================================
+# INET4031 - Automated User Creation Script (Step 10)
+# Author: Jinnipakarn Berthiaume
+# Date: 10/28/2025
+# Purpose: Read user account data from stdin, then create or simulate
+#          user accounts and group memberships on a Linux system.
+# ===============================================================
 
-import os      # Allows execution of Linux system commands
-import re      # Enables use of regular expressions
-import sys     # Used for reading from standard input
+import os
+import re
+import sys
 
+# ---------------------------------------------------------------
+# Helper Function: run_cmd()
+# Executes or simulates a system command depending on DRY RUN mode.
+# ---------------------------------------------------------------
+def run_cmd(cmd, dry_run):
+    if dry_run:
+        print(f"[DRY-RUN] Would run: {cmd}")
+    else:
+        os.system(cmd)
+
+
+# ---------------------------------------------------------------
+# Main program logic
+# ---------------------------------------------------------------
 def main():
-    # Read each line from the input file (via stdin)
-    for line in sys.stdin:
+    print("Run in DRY-RUN mode? [Y/n]: ", end="")
+    choice = input().strip().lower()
+    dry_run = (choice != "n")
 
-        # Ignore comment lines (those starting with '#')
-        # 'match' checks whether the current line begins with a '#'
-        match = re.match("^#", line)
+    for raw in sys.stdin:
+        line = raw.strip("\n")
 
-        # Split line into fields separated by ':' and remove extra spaces
-        fields = line.strip().split(':')
-
-        # Skip invalid lines — those that are comments or missing required fields
-        if match or len(fields) != 5:
+        # ---- Skip empty lines ----
+        if not line.strip():
             continue
 
-        # Assign input fields to descriptive variable names
-        username = fields[0]      # Username for the new user
-        password = fields[1]      # Initial password for the user
-        lastname = fields[2]      # User's last name (for GECOS field)
-        firstname = fields[3]     # User's first name (for GECOS field)
-        groups = fields[4].split(',')  # List of groups to which the user belongs
+        # ---- Detect comment lines ----
+        is_comment = re.match("^#", line) is not None
 
-        # Combine first and last name for the GECOS (comment) field in /etc/passwd
-        gecos = "%s %s,,," % (firstname, lastname)
+        # ---- Split colon-delimited fields ----
+        # Expected format: username:password:firstname:lastname:group1,group2
+        fields = line.strip().split(':')
 
-        # Print the command that would be executed to create the account
+        # ---- Error / Skip Handling ----
+        # Skip comments or lines that don't have exactly 5 fields
+        if is_comment or len(fields) != 5:
+            if dry_run:
+                if is_comment:
+                    print(f"[DRY-RUN] Skipping commented line: {line}")
+                else:
+                    print(f"[DRY-RUN][ERROR] Invalid format (needs 5 fields): {line}")
+            continue
+
+        # ---- Extract Fields ----
+        username = fields[0]
+        password = fields[1]
+        first = fields[2]
+        last = fields[3]
+        gecos = f"{first} {last},,,"
+        groups = fields[4].split(',')
+
+        # ---- User Creation ----
         print(f"==> Creating account for {username}...")
         cmd = f"/usr/sbin/adduser --disabled-password --gecos '{gecos}' {username}"
+        run_cmd(cmd, dry_run)
 
-        # Dry-run: Print command for verification, comment os.system() to avoid execution
-        # Actual run: Uncomment os.system() to create the user
-        os.system(cmd)
-
-        # Print and execute the command to set the user's password
+        # ---- Password Setup ----
         print(f"==> Setting the password for {username}...")
-        cmd = f"/bin/echo -ne '{password}\n{password}' | /usr/bin/sudo /usr/bin/passwd {username}"
-        os.system(cmd)
+        cmd = f"/bin/echo -ne '{password}\\n{password}' | /usr/bin/sudo /usr/bin/passwd {username}"
+        run_cmd(cmd, dry_run)
 
-        # If user belongs to any groups, assign them
+        # ---- Group Assignments ----
         for group in groups:
-            if group != '-':  # '-' indicates no group
+            if group != '-':
                 print(f"==> Assigning {username} to the {group} group...")
                 cmd = f"/usr/sbin/adduser {username} {group}"
-                os.system(cmd)
+                run_cmd(cmd, dry_run)
+            else:
+                # Inform if no group assignment is specified
+                if dry_run:
+                    print(f"[DRY-RUN] No supplemental groups for {username} ('-' specified)")
 
-# Run the main function when executed
+    # ---- End of processing ----
+    print()
+    if dry_run:
+        print("[DRY-RUN COMPLETE]")
+    else:
+        print("[USER CREATION COMPLETE]")
+
+
+# ---------------------------------------------------------------
+# Script Entry Point
+# ---------------------------------------------------------------
 if __name__ == "__main__":
+    # The script begins execution here.
+    # The DRY-RUN mode ensures safety before making any real system changes.
     main()
-
